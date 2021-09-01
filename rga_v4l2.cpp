@@ -70,7 +70,6 @@ static enum v4l2_buf_type buf_type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 struct buffer *buffers;
 static unsigned int n_buffers;
 static int frame_count = 6000;
-FILE *fp=NULL;
 static int debug = 1;
 
 int dev_fd;
@@ -105,13 +104,8 @@ static int xioctl(int fh, int request, void *arg)
 
 static void process_buffer(struct buffer* buff, int size)
 {
-
-	if (fp) {
-		fwrite(buff->start, size, 1, fp);
-		fflush(fp);
-	}
-
 #ifdef USE_RGA
+    // 将v4l2 获取到的yuv帧传入RGA中
 	rga_info_src.virAddr = buff->start;
 	rga->RkRgaBlit(&rga_info_src, &rga_info_dst, NULL);
 
@@ -142,6 +136,7 @@ static int read_frame()
         buf.length = FMT_NUM_PLANES;
     }
 
+    // 出队列以取得已采集数据的帧缓冲，取得原始采集数据。
     if (-1 == xioctl(fd, VIDIOC_DQBUF, &buf))
             errno_exit("VIDIOC_DQBUF");
 
@@ -154,6 +149,7 @@ static int read_frame()
     process_buffer(&(buffers[i]), bytesused);
     DBG("bytesused %d\n", bytesused);
 
+    // 将缓冲重新入队列尾,这样可以循环采集
     if (-1 == xioctl(fd, VIDIOC_QBUF, &buf))
         errno_exit("VIDIOC_QBUF");
 
@@ -169,22 +165,22 @@ static unsigned long get_time(void)
 
 static void mainloop(void)
 {
-        unsigned int count = 1;
-        //pthread_create(&display_thread_id, NULL, RgaProcessThread, dec);
-        unsigned long read_start_time, read_end_time;
-        while (1) {
+    unsigned int count = 1;
+    //pthread_create(&display_thread_id, NULL, RgaProcessThread, dec);
+    unsigned long read_start_time, read_end_time;
+    while (1) {
 
-            DBG("No.%d\n", count);        //显示当前帧数目
-            if(count++ == frame_count)
-                break;
+        DBG("No.%d\n", count);        //显示当前帧数目
+        if(count++ == frame_count)
+            break;
 
-			read_start_time = get_time();
+        read_start_time = get_time();
 
-            read_frame();
-			read_end_time = get_time();
-			DBG("take time %lu ms\n",read_end_time - read_start_time);
-        }
-        DBG("\nREAD AND SAVE DONE!\n");
+        read_frame();
+        read_end_time = get_time();
+        DBG("take time %lu ms\n",read_end_time - read_start_time);
+    }
+    DBG("\nREAD AND SAVE DONE!\n");
 }
 
 static void stop_capturing(void)
@@ -192,8 +188,10 @@ static void stop_capturing(void)
     enum v4l2_buf_type type;
 
     type = buf_type;
+    // 停止视频采集
     if (-1 == xioctl(fd, VIDIOC_STREAMOFF, &type))
         errno_exit("VIDIOC_STREAMOFF");
+    close(fd);
 }
 
 static void start_capturing(void)
@@ -201,6 +199,7 @@ static void start_capturing(void)
     unsigned int i;
     enum v4l2_buf_type type;
 
+    // 将读取到的队列中的视频帧重新入视频流队列尾部
     for (i = 0; i < n_buffers; ++i) {
         struct v4l2_buffer buf;
 
@@ -218,6 +217,8 @@ static void start_capturing(void)
         if (-1 == xioctl(fd, VIDIOC_QBUF, &buf))
             errno_exit("VIDIOC_QBUF");
     }
+
+    // 开始视频采集
     type = buf_type;
     if (-1 == xioctl(fd, VIDIOC_STREAMON, &type))
         errno_exit("VIDIOC_STREAMON");
@@ -236,6 +237,9 @@ static void uninit_device(void)
     free(buffers);
 }
 
+// 使用单平面API映射缓冲区
+// TODO：尝试使用多平面
+// https://www.kernel.org/doc/html/v4.9/media/uapi/v4l/mmap.html
 static void init_mmap(void)
 {
     struct v4l2_requestbuffers req;
@@ -246,6 +250,7 @@ static void init_mmap(void)
     req.type = buf_type;
     req.memory = V4L2_MEMORY_MMAP;
 
+    // 向驱动申请帧缓冲，一般不超过5个
     if (-1 == xioctl(fd, VIDIOC_REQBUFS, &req)) {
         if (EINVAL == errno) {
             ERR("%s does not support memory mapping\n", dev_name);
@@ -267,6 +272,8 @@ static void init_mmap(void)
         exit(EXIT_FAILURE);
     }
 
+    // 将申请到的帧缓冲映射到用户空间，这样就可以直接操作采集到的帧了，而不必去复制
+    // 将申请到的帧缓冲全部入队列，以便存放采集到的数据.
     for (n_buffers = 0; n_buffers < req.count; ++n_buffers) {
         struct v4l2_buffer buf;
         struct v4l2_plane planes[FMT_NUM_PLANES];
@@ -325,6 +332,7 @@ static void init_display_buf(int buffer_size, int width, int height)
 #ifdef USE_RGA
 	//alloc a buffer for rga input
 //dst
+    // 申请 RGA Buffer
 	rga->RkRgaGetAllocBuffer(&bo_dst, disp_buf.width, disp_buf.height, 32);
 	rga->RkRgaGetBufferFd(&bo_dst, &(rga_info_dst.fd));
 
@@ -332,7 +340,10 @@ static void init_display_buf(int buffer_size, int width, int height)
 	set_rect_crop(&(rga_info_dst.rect), 0, 0, disp_buf.width, disp_buf.height);
 	set_rect_format(&(rga_info_dst.rect), V4l2ToRgaFormat(V4L2_PIX_FMT_RGB24));
 
+    //映射 RGA buffer到用户空间
 	rga->RkRgaGetMmap(&bo_dst);
+
+    // 在RGA中讲yuv转码为RGB，转码之后的码流传递给opencv显示在窗口中
 	mat = new cv::Mat(cv::Size(width, height), CV_8UC3, bo_dst.ptr);
 
 //src
@@ -346,6 +357,7 @@ static void init_display_buf(int buffer_size, int width, int height)
 #ifdef USE_RGA
 static void init_rga(struct display_buffer* disp_buf)
 {
+    // 初始化rockchip图像渲染引擎
 	rga = new RockchipRga();
 	rga->RkRgaInit();
 
@@ -364,6 +376,7 @@ static void init_device(void)
     struct v4l2_capability cap;
     struct v4l2_format fmt;
 
+    // 获取camera设备的能力特性，是否具有视频输入输出，或者音频输入输出
     if (-1 == xioctl(fd, VIDIOC_QUERYCAP, &cap)) {
             if (EINVAL == errno) {
                 ERR("%s is no V4L2 device\n",dev_name);
@@ -373,12 +386,14 @@ static void init_device(void)
             }
     }
 
+    // 检测是否支持单平面和多平面帧读取方式
     if (!(cap.capabilities & V4L2_CAP_VIDEO_CAPTURE) &&
             !(cap.capabilities & V4L2_CAP_VIDEO_CAPTURE_MPLANE)) {
         ERR("%s is not a video capture device, capabilities: %x\n", dev_name, cap.capabilities);
         exit(EXIT_FAILURE);
     }
 
+    // 检测是否支持流式I/O
     if (!(cap.capabilities & V4L2_CAP_STREAMING)) {
         ERR("%s does not support streaming i/o\n",dev_name);
         exit(EXIT_FAILURE);
@@ -394,8 +409,10 @@ static void init_device(void)
     fmt.fmt.pix.width = width;
     fmt.fmt.pix.height = height;
     fmt.fmt.pix.pixelformat = format;
+    // 图像包含两个字段，逐行交错。 temporal的时间顺序（是首先传输顶场还是底场）取决于当前的视频标准。
     fmt.fmt.pix.field = V4L2_FIELD_INTERLACED;
 
+    // 设置视频的制式和帧格式，制式包括PAL，NTSC，帧的格式包括宽度和高度
     if (-1 == xioctl(fd, VIDIOC_S_FMT, &fmt))
             errno_exit("VIDIOC_S_FMT");
 
@@ -417,6 +434,7 @@ static void close_device(void)
 
 static void open_device(void)
 {
+    // 打开设备文件
     fd = open("/dev/video0", O_RDWR /* required */ /*| O_NONBLOCK*/, 0);
 
     if (-1 == fd) {
@@ -436,9 +454,8 @@ int main(int argc, char **argv)
     open_device();
     init_device();
     start_capturing();
-    mainloop();
 
-    if (fp) fclose(fp);
+    mainloop();
 
     stop_capturing();
     uninit_device();
