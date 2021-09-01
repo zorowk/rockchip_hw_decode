@@ -21,7 +21,7 @@
 
 
 #ifdef USE_RGA
-#include "rga_ops.h"
+#include "rga_const.h"
 #endif
 
 extern "C" {
