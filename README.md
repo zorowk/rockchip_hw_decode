@@ -1,4 +1,4 @@
-# This code is based on the v4l2 camera data capture and display code of the Rockchip chip platform
+# This code is based on the v4l2 camera data capture  usage RGA
 
 ## Software requirements:
 * Qt
