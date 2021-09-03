@@ -18,7 +18,11 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+
+
+#ifdef USE_RGA
 #include "rga_const.h"
+#endif
 
 extern "C" {
 #define virtual vir
@@ -70,10 +74,12 @@ static int debug = 1;
 
 int dev_fd;
 
+#ifdef USE_RGA
 RockchipRga *rga;
 bo_t bo_dst;
 rga_info_t rga_info_src;
 rga_info_t rga_info_dst;
+#endif
 
 struct display_buffer disp_buf;
 cv::Mat* mat;
@@ -98,11 +104,19 @@ static int xioctl(int fh, int request, void *arg)
 
 static void process_buffer(struct buffer* buff, int size)
 {
+#ifdef USE_RGA
     // 将v4l2 获取到的yuv帧传入RGA中
 	rga_info_src.virAddr = buff->start;
 	rga->RkRgaBlit(&rga_info_src, &rga_info_dst, NULL);
 
 	cv::imshow("video", *mat);
+#else
+    cv::Mat yuvmat(cv::Size(width, height*3/2), CV_8UC1, buff->start);
+    cv::Mat rgbmat(cv::Size(width, height), CV_8UC3);
+    cv::cvtColor(yuvmat, rgbmat, CV_YUV2BGR_NV12);
+    cv::imshow("video", rgbmat);
+#endif
+
 	cv::waitKey(1);
 }
 
@@ -304,13 +318,18 @@ static void init_mmap(void)
 static void init_display_buf(int buffer_size, int width, int height)
 {
     int bpp;
+    int export_dmafd;
 
+    //disp_buf.start = get_drm_fd(drm_fd, width, height, 24, &export_dmafd);
 	bpp = buffer_size * 8 / width / height;
 	disp_buf.length= buffer_size;
 	disp_buf.width = width;
 	disp_buf.height= height;
 	disp_buf.bpp   = bpp;
+	//disp_buf.buf_fd= export_dmafd;
 
+	//mat = new cv::Mat(cv::Size(width, height), CV_8UC3, disp_buf.start);
+#ifdef USE_RGA
 	//alloc a buffer for rga input
 //dst
     // 申请 RGA Buffer
@@ -324,17 +343,18 @@ static void init_display_buf(int buffer_size, int width, int height)
     //映射 RGA buffer到用户空间
 	rga->RkRgaGetMmap(&bo_dst);
 
-    // 转码之后的RGB码流传递给opencv窗口显示
+    // 在RGA中讲yuv转码为RGB，转码之后的码流传递给opencv显示在窗口中
 	mat = new cv::Mat(cv::Size(width, height), CV_8UC3, bo_dst.ptr);
 
 //src
 	set_rect_size(&(rga_info_src.rect), width, height);
 	set_rect_crop(&(rga_info_src.rect), 0, 0, width, height);
 	set_rect_format(&(rga_info_src.rect), V4l2ToRgaFormat(format));
-
+#endif
 	cv::namedWindow("video");
 }
 
+#ifdef USE_RGA
 static void init_rga(struct display_buffer* disp_buf)
 {
     // 初始化rockchip图像渲染引擎
@@ -349,6 +369,7 @@ static void init_rga(struct display_buffer* disp_buf)
 	rga_info_dst.mmuFlag = 1;
 	rga_info_dst.fd = -1;
 }
+#endif
 
 static void init_device(void)
 {
@@ -397,8 +418,9 @@ static void init_device(void)
 
     init_mmap();
 
+#ifdef USE_RGA
     init_rga(&disp_buf);
-
+#endif
     init_display_buf(fmt.fmt.pix.sizeimage, width, height);
 }
 

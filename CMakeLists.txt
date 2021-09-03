@@ -15,7 +15,9 @@ include_directories(/usr/include/glib-2.0 )
 set(link_libs dl rga pthread drm opencv_core opencv_highgui opencv_imgcodecs opencv_imgproc)
 add_executable(rga_v4l2 rga_v4l2.cpp rga_const.cpp)
 target_link_libraries(rga_v4l2 ${link_libs})
+target_compile_definitions(rga_v4l2 PUBLIC RKISP=1)
 target_compile_definitions(rga_v4l2 PUBLIC LINUX)
+target_compile_definitions(rga_v4l2 PUBLIC USE_RGA)
 
 INCLUDE(GNUInstallDirs)
 
