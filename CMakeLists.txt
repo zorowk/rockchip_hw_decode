@@ -1,7 +1,5 @@
 cmake_minimum_required(VERSION 2.8)
-
-set(CMAKE_SYSTEM_NAME Linux)
-set(CMAKE_BUILD_TYPE Release)
+project(ffmpeg_mpp)
 
 set(CMAKE_C_COMPILER gcc)
 set(CMAKE_CXX_COMPILER g++)
@@ -9,16 +7,21 @@ set(CMAKE_CXX_COMPILER g++)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
-include_directories(/usr/include/drm )
-include_directories(/usr/include/glib-2.0 )
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_FLAGS "-D__STDC_CONSTANT_MACROS")
 
-set(link_libs dl rga pthread drm opencv_core opencv_highgui opencv_imgcodecs opencv_imgproc)
-add_executable(rga_v4l2 rga_v4l2.cpp rga_const.cpp)
-target_link_libraries(rga_v4l2 ${link_libs})
-target_compile_definitions(rga_v4l2 PUBLIC RKISP=1)
-target_compile_definitions(rga_v4l2 PUBLIC LINUX)
-target_compile_definitions(rga_v4l2 PUBLIC USE_RGA)
+find_path(AVCODEC_INCLUDE_DIR libavcodec/avcodec.h)
+find_library(AVCODEC_LIBRARY avcodec)
 
-INCLUDE(GNUInstallDirs)
+find_path(AVFORMAT_INCLUDE_DIR libavformat/avformat.h)
+find_library(AVFORMAT_LIBRARY avformat)
 
-INSTALL(TARGETS rga_v4l2 RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+find_path(AVUTIL_INCLUDE_DIR libavutil/avutil.h)
+find_library(AVUTIL_LIBRARY avutil)
+
+find_path(AVDEVICE_INCLUDE_DIR libavdevice/avdevice.h)
+find_library(AVDEVICE_LIBRARY avdevice)
+
+add_executable(ffmpeg_mpp ffmpeg_rkmpp.c)
+target_include_directories(ffmpeg_mpp PRIVATE ${AVCODEC_INCLUDE_DIR} ${AVFORMAT_INCLUDE_DIR} ${AVUTIL_INCLUDE_DIR} ${AVDEVICE_INCLUDE_DIR})
+target_link_libraries(ffmpeg_mpp PRIVATE ${AVCODEC_LIBRARY} ${AVFORMAT_LIBRARY} ${AVUTIL_LIBRARY} ${AVDEVICE_LIBRARY})
