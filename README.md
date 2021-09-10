@@ -1,16 +1,13 @@
-# This code is based on the v4l2 camera data capture  usage RGA
+# ffmpeg usage rockchip mpp decode
 
 ## Software requirements:
-* Qt
 * Cmake
+* ffmpeg(mpp)
 
-## Example:
+## Build:
 ```
 apt-get install -y git cmake libdrm-dev g++ librga-dev
 cmake ./
 make
-
-// Adapt in rk3399
-sudo -u user DISPLAY=:0 ./rga_v4l2
 ```
 

@@ -1,5 +1,7 @@
-cmake_minimum_required(VERSION 2.8)
-project(ffmpeg_mpp)
+# vi: set noexpandtab syntax=cmake:
+
+PROJECT(ffmpeg_process)
+INCLUDE(GNUInstallDirs)
 
 set(CMAKE_C_COMPILER gcc)
 set(CMAKE_CXX_COMPILER g++)
@@ -10,18 +12,22 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_FLAGS "-D__STDC_CONSTANT_MACROS")
 
-find_path(AVCODEC_INCLUDE_DIR libavcodec/avcodec.h)
-find_library(AVCODEC_LIBRARY avcodec)
+# add_definitions(-fexceptions -finstrument-functions -funwind-tables -g -rdynamic -O0)
 
-find_path(AVFORMAT_INCLUDE_DIR libavformat/avformat.h)
-find_library(AVFORMAT_LIBRARY avformat)
+if (DEFINED DRAW_BY_DRM)
+	add_definitions(-DDRAW_BY_DRM=${DRAW_BY_DRM})
+endif()
 
-find_path(AVUTIL_INCLUDE_DIR libavutil/avutil.h)
-find_library(AVUTIL_LIBRARY avutil)
+set(RK_IMAGE_PROCESS_LINK_LIBRARIES avutil avformat avcodec swscale)
 
-find_path(AVDEVICE_INCLUDE_DIR libavdevice/avdevice.h)
-find_library(AVDEVICE_LIBRARY avdevice)
+set(RK_IMAGE_PROCESS_SRC image_process.cpp)
 
-add_executable(ffmpeg_mpp ffmpeg_rkmpp.c)
-target_include_directories(ffmpeg_mpp PRIVATE ${AVCODEC_INCLUDE_DIR} ${AVFORMAT_INCLUDE_DIR} ${AVUTIL_INCLUDE_DIR} ${AVDEVICE_INCLUDE_DIR})
-target_link_libraries(ffmpeg_mpp PRIVATE ${AVCODEC_LIBRARY} ${AVFORMAT_LIBRARY} ${AVUTIL_LIBRARY} ${AVDEVICE_LIBRARY})
+add_executable(ffmpeg_process ${RK_IMAGE_PROCESS_SRC})
+
+target_include_directories(ffmpeg_process
+                           PUBLIC ${GFLAGS_INCLUDE_DIRS}
+                           PUBLIC ${LIBAVUTIL_INCLUDE_DIRS}
+                           PUBLIC ${LIBDRM_INCLUDE_DIRS}
+                          )
+
+target_link_libraries(ffmpeg_process ${RK_IMAGE_PROCESS_LINK_LIBRARIES})
